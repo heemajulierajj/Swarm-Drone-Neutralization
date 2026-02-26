@@ -1,0 +1,497 @@
+import zipfile, os
+
+zip_path = "UAVs.v1i.yolov8.zip"
+extract_path = "dataset"
+
+with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+
+print("Extracted")
+
+!dir dataset
+
+!dir C:\Users\Admin\dataset\train\images
+!dir C:\Users\Admin\dataset\valid\images
+
+import psutil
+print(psutil.cpu_percent())
+
+import os
+os.getcwd()
+
+import os
+
+result_folder = "runs/detect/train36"
+print("Files in result folder:", os.listdir(result_folder))
+
+import cv2
+
+cap = cv2.VideoCapture(0)
+ret, frame = cap.read()
+print(ret, frame) 
+cap.release()
+
+import cv2
+
+for i in range(5):
+    cap = cv2.VideoCapture(i, cv2
+                           .CAP_DSHOW)
+    ret, _ = cap.read()
+    print("Index", i, "->", ret)
+    cap.release()
+
+from ultralytics import YOLO
+import cv2
+from PIL import Image
+from IPython.display import display, clear_output
+import winsound
+import numpy as np
+import os
+import time
+
+# ----------------------------
+# AUTO CAMERA SELECTION
+# ----------------------------
+def get_available_camera():
+    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+    if cap.isOpened():
+        print("External Webcam Selected (Index 1)")
+        return cap
+    cap.release()
+
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if cap.isOpened():
+        print("Laptop Camera Selected (Index 0)")
+        return cap
+    cap.release()
+
+    print("No Camera Found")
+    return None
+
+
+cap = get_available_camera()
+if cap is None:
+    exit()
+
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
+
+# ----------------------------
+# SOUND FILE CHECK
+# ----------------------------
+sound_path = "Alarm drone.wav"
+
+if not os.path.exists(sound_path):
+    print("Sound file not found. Check path.")
+else:
+    print("Sound file found")
+
+# ----------------------------
+# LOAD MODEL
+# ----------------------------
+model = YOLO("runs/detect/train36/weights/best.pt")
+
+# ----------------------------
+# SETTINGS
+# ----------------------------
+TOLERANCE = 40
+CONF_THRESHOLD = 0.60
+MIN_BOX_AREA = 1500
+alarm_playing = False
+
+print("Drone Detection Started")
+
+# ----------------------------
+# MAIN LOOP
+# ----------------------------
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Frame not received")
+            break
+
+        frame = cv2.flip(frame, 1)
+
+        results = model(frame, verbose=False)
+        annotated_frame = frame.copy()
+
+        drone_count = 0
+        directions = []
+
+        h, w, _ = frame.shape
+        frame_center_x = w // 2
+
+        if results[0].boxes is not None:
+            for box in results[0].boxes:
+                cls = int(box.cls[0])
+                conf = float(box.conf[0])
+
+                x1, y1, x2, y2 = box.xyxy[0]
+                box_area = (x2 - x1) * (y2 - y1)
+
+                if cls == 0 and conf > CONF_THRESHOLD and box_area > MIN_BOX_AREA:
+                    drone_count += 1
+
+                    drone_center_x = int((x1 + x2) / 2)
+
+                    if drone_center_x < frame_center_x - TOLERANCE:
+                        direction = "LEFT"
+                    elif drone_center_x > frame_center_x + TOLERANCE:
+                        direction = "RIGHT"
+                    else:
+                        direction = "CENTER"
+
+                    directions.append(direction)
+
+                    cv2.rectangle(
+                        annotated_frame,
+                        (int(x1), int(y1)),
+                        (int(x2), int(y2)),
+                        (0, 255, 0),
+                        2
+                    )
+
+                    cv2.putText(
+                        annotated_frame,
+                        f"DRONE {conf:.2f}",
+                        (int(x1), int(y1) - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (0, 255, 0),
+                        2
+                    )
+
+        # ----------------------------
+        # FULL SOUND PLAY (NO CUT)
+        # ----------------------------
+        if drone_count > 0:
+            text = f"DRONES: {drone_count} | " + ", ".join(directions)
+
+            if not alarm_playing and os.path.exists(sound_path):
+                winsound.PlaySound(
+                    sound_path,
+                    winsound.SND_FILENAME | winsound.SND_ASYNC
+                )
+                alarm_playing = True
+        else:
+            text = "NO DRONE"
+            alarm_playing = False
+
+        cv2.putText(
+            annotated_frame,
+            text,
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.9,
+            (0, 255, 0),
+            2
+        )
+
+        frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(frame_rgb)
+
+        clear_output(wait=True)
+        display(img)
+
+        time.sleep(0.03)
+
+except KeyboardInterrupt:
+    print("Stopped by user")
+
+finally:
+    cap.release()
+    print("Camera released safely")
+
+import sounddevice as sd
+import numpy as np
+import time
+
+duration = 1
+fs = 44100
+
+# Adjusted realistic thresholds
+NEAR_THRESHOLD = 0.02
+FAR_THRESHOLD = 0.005
+
+def get_rms(signal):
+    return np.sqrt(np.mean(signal**2))
+
+print("Starting drone sound detection...")
+
+try:
+    while True:
+        recording = sd.rec(int(duration * fs),
+                           samplerate=fs,
+                           channels=1,
+                           dtype='float32')
+        sd.wait()
+
+        recording = recording.flatten()
+        rms_value = get_rms(recording)
+
+        print(f"RMS Value: {rms_value:.4f}")
+
+        if rms_value > NEAR_THRESHOLD:
+            print("Drone VERY NEAR detected!")
+        elif rms_value > FAR_THRESHOLD:
+            print("Drone FAR detected.")
+        else:
+            print("No drone detected.")
+
+        print("-" * 40)
+        time.sleep(0.5)
+
+except KeyboardInterrupt:
+    print("Detection stopped.")
+
+#### import matplotlib.pyplot as plt
+import numpy as np
+from IPython import display
+import time
+
+# =========================================================
+# SENSOR INPUT (CHANGE ONLY THESE TWO LINES)
+# =========================================================
+direction = "left"        # "left" / "center" / "right"
+distance_level = "far"    # "near" / "far" / "very_far"
+
+angle_map = {"left": -45, "center": 0, "right": 45}
+radius_map = {"near": 15, "far": 40, "very_far": 70}
+
+theta = np.radians(angle_map[direction])
+r = radius_map[distance_level]
+
+enemy_start = np.array([50 + r * np.cos(theta), 50 + r * np.sin(theta)])
+
+# =========================================================
+# SIMULATION SETTINGS
+# =========================================================
+num_blue = 4
+num_red = 6
+max_steps = 100
+arena_size = 100
+blue_speed = 3
+red_speed = 2
+capture_distance = 4
+min_blue_distance = 6
+
+# =========================================================
+# INITIAL POSITIONS
+# =========================================================
+blue_pos = np.random.rand(num_blue, 2) * 20 + 40
+red_pos = [enemy_start + (np.random.rand(2) - 0.5) * 10 for _ in range(num_red)]
+
+distance_travelled = np.zeros(num_blue)
+enemies_remaining_history = []
+neutralized_count = 0
+
+# =========================================================
+# DASHBOARD
+# =========================================================
+fig, (ax_map, ax_metrics) = plt.subplots(1, 2, figsize=(12, 5))
+
+# =========================================================
+# MAIN LOOP
+# =========================================================
+for step in range(max_steps):
+
+    if len(red_pos) == 0:
+        break
+
+    # Enemy random movement
+    for i in range(len(red_pos)):
+        move = (np.random.rand(2) - 0.5) * red_speed
+        red_pos[i] = np.clip(red_pos[i] + move, 0, arena_size)
+
+    active_reds = np.array(red_pos)
+
+    # Friendly drone coordination
+    for b in range(num_blue):
+
+        if len(active_reds) == 0:
+            break
+
+        distances = np.linalg.norm(active_reds - blue_pos[b], axis=1)
+        closest_idx = np.argmin(distances)
+        target = active_reds[closest_idx]
+
+        direction_vec = target - blue_pos[b]
+        dist_to_target = np.linalg.norm(direction_vec)
+
+        if dist_to_target > 0:
+            move_vec = (direction_vec / dist_to_target) * blue_speed
+
+            # Collision avoidance
+            for other in range(num_blue):
+                if other != b:
+                    d = np.linalg.norm((blue_pos[b] + move_vec) - blue_pos[other])
+                    if d < min_blue_distance:
+                        move_vec *= 0.2
+
+            blue_pos[b] += move_vec
+            distance_travelled[b] += np.linalg.norm(move_vec)
+
+        # Neutralization
+        if distances[closest_idx] < capture_distance:
+            red_pos.pop(closest_idx)
+            neutralized_count += 1
+            active_reds = np.array(red_pos)
+
+    # =====================================================
+    # VISUALIZATION (GREEN POINT REMOVED)
+    # =====================================================
+    ax_map.clear()
+    ax_map.set_xlim(0, arena_size)
+    ax_map.set_ylim(0, arena_size)
+    ax_map.set_title(f"Tactical Map (Step {step})")
+
+    # Blue swarm
+    ax_map.scatter(blue_pos[:, 0], blue_pos[:, 1], s=80, label="Blue Swarm")
+
+    # Red enemies
+    if len(red_pos) > 0:
+        r_arr = np.array(red_pos)
+        ax_map.scatter(r_arr[:, 0], r_arr[:, 1], marker="x", s=80, label="Enemies")
+
+    ax_map.legend()
+
+    # Metrics graph
+    enemies_remaining_history.append(len(red_pos))
+    ax_metrics.clear()
+    ax_metrics.set_xlim(0, max_steps)
+    ax_metrics.set_ylim(0, num_red)
+    ax_metrics.set_title("Neutralization Progress")
+    ax_metrics.set_xlabel("Time Step")
+    ax_metrics.set_ylabel("Active Enemies")
+    ax_metrics.plot(enemies_remaining_history, linewidth=2)
+    ax_metrics.fill_between(
+        range(len(enemies_remaining_history)),
+        enemies_remaining_history,
+        alpha=0.1,
+    )
+
+    display.clear_output(wait=True)
+    display.display(fig)
+    time.sleep(0.05)
+
+plt.close()
+
+# =========================================================
+# FINAL REPORT
+# =========================================================
+print("\n" + "=" * 35)
+print("FINAL PERFORMANCE METRICS")
+print("=" * 35)
+print(f"Enemies Neutralized : {neutralized_count}/{num_red}")
+print(f"Mission Time        : {step} steps")
+
+for i, d in enumerate(distance_travelled):
+    print(f"Drone {i+1} Distance Travelled : {d:.2f} units")
+
+import numpy as np
+import time
+
+# ---------------- Swarm setup ----------------
+num_blue = 4
+arena_size = 100
+blue_speed = 3
+capture_distance = 4
+min_blue_distance = 6
+
+# Initialize friendly drone positions
+blue_pos = np.random.rand(num_blue, 2) * 20 + 40   # center spawn
+distance_travelled = np.zeros(num_blue)
+neutralized_count = 0
+
+# Example enemy detection input
+camera_direction = "RIGHT"   # LEFT / CENTER / RIGHT
+mic_rms_value = 0.02         # sound strength
+
+# ---------------- Thresholds ----------------
+NEAR_THRESHOLD = 0.05
+FAR_THRESHOLD = 0.01
+
+# ---------------- Function to get enemy position ----------------
+def get_enemy_positions(camera_direction, mic_rms_value):
+
+    # Direction → angle
+    angle_map = {
+        "LEFT": -45,
+        "CENTER": 0,
+        "RIGHT": 45
+    }
+    theta = np.radians(angle_map[camera_direction])
+
+    # Mic RMS → distance radius
+    if mic_rms_value > NEAR_THRESHOLD:
+        r = 20
+    elif mic_rms_value > FAR_THRESHOLD:
+        r = 45
+    else:
+        r = 70
+
+    # Polar → Cartesian (origin at arena center)
+    origin = np.array([arena_size/2, arena_size/2])
+    enemy_pos = origin + np.array([r*np.cos(theta), r*np.sin(theta)])
+
+    return np.array([enemy_pos])
+
+
+# ---------------- Real-time swarm loop ----------------
+try:
+    for step in range(10):  # simulate 10 steps
+
+        # Get enemy position from sensors
+        red_pos = get_enemy_positions(camera_direction, mic_rms_value)
+        active_reds = np.array(red_pos)
+
+        # Update friendly drone positions
+        for b in range(num_blue):
+            if len(active_reds) == 0:
+                break
+
+            distances = np.linalg.norm(active_reds - blue_pos[b], axis=1)
+            closest_idx = np.argmin(distances)
+            target = active_reds[closest_idx]
+
+            direction_vec = target - blue_pos[b]
+            dist_to_target = np.linalg.norm(direction_vec)
+
+            if dist_to_target > 0:
+                move_vec = (direction_vec / dist_to_target) * blue_speed
+
+                # Collision avoidance
+                for other in range(num_blue):
+                    if other != b:
+                        if np.linalg.norm((blue_pos[b] + move_vec) - blue_pos[other]) < min_blue_distance:
+                            move_vec *= 0.2
+
+                blue_pos[b] += move_vec
+                distance_travelled[b] += np.linalg.norm(move_vec)
+
+            # Neutralization check
+            if distances[closest_idx] < capture_distance:
+                red_pos = np.delete(red_pos, closest_idx, axis=0)
+                neutralized_count += 1
+                active_reds = np.array(red_pos)
+
+        # Debug print
+        print(f"\nStep {step+1}")
+        print("Enemy Position (from sensors):", red_pos)
+        print("Blue positions:\n", blue_pos)
+        print("Neutralized:", neutralized_count)
+        print("-"*40)
+
+        time.sleep(0.5)
+
+except KeyboardInterrupt:
+    print("Loop stopped manually.")
+
+finally:
+    print("\nFINAL METRICS")
+    print("Total Neutralized:", neutralized_count)
+    
+    for i, d in enumerate(distance_travelled):
+        print(f"Drone {i+1} Distance: {d:.2f}")
+
